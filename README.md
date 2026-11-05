@@ -2,6 +2,8 @@
 
 A Claude Code mod that shows whether your plan usage is running ahead of or behind a steady burn until each limit resets.
 
+![The usage pace panel above the prompt in the Claude desktop app, with the Pace chip in the footer](docs/panel.png)
+
 A "Pace" chip sits in the composer footer beside the model picker. Press it to open a panel above the prompt with one row per limit: the 5-hour window, the weekly window, and the per-model weekly window when the Claude desktop app reports one. Each bar shows what you have used, a tick at where a steady burn would be right now, stripes for the room left before the tick (or the stretch past it when you are over pace), the time until the reset as a countdown, and a verdict such as "41% under pace". The panel refreshes every minute. `/usage-pace` toggles it too.
 
 The chip's label is a plugin option (Pace, Usage, Plan usage, Limits), set in the config menu.
