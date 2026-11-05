@@ -1,0 +1,15 @@
+{
+  "name": "usage-pace",
+  "version": "0.2.0",
+  "description": "Shows whether plan usage is running ahead of or behind a steady burn until each limit resets",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "label": {
+      "type": "string",
+      "title": "Footer chip label",
+      "description": "The fixed text of the chip beside the model picker that opens the usage pace panel.",
+      "default": "Pace",
+      "options": ["Pace", "Usage", "Plan usage", "Limits"]
+    }
+  }
+}
