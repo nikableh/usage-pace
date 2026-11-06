@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { barSvg, formatDuration, formatReset, fromAppUsage, fromRateLimits, paceOf } from './pace'
+import { barSvg, formatDuration, formatReset, fromAppUsage, fromRateLimits, mergeWindows, paceOf } from './pace'
 
 const HOUR = 3_600_000
 const NOW = Date.parse('2026-11-04T12:00:00.000Z')
@@ -70,10 +70,34 @@ test('the app usage payload keeps the per-model weekly window', async () => {
     },
   }
   const parsed = fromAppUsage({ content: [{ type: 'text', text: JSON.stringify(body) }] })
-  expect(parsed?.plan).toBe('Max')
-  expect(parsed?.windows.map(window => window.lengthMs)).toEqual([5 * HOUR, 7 * 24 * HOUR])
-  expect(fromAppUsage({ content: [{ type: 'text', text: '{"plan":{"status":"unavailable"}}' }] })).toBeUndefined()
-  expect(fromAppUsage({ content: [{ type: 'text', text: 'nope' }] })).toBeUndefined()
+  if ('error' in parsed) throw new Error(parsed.error)
+  expect(parsed.plan).toBe('Max')
+  expect(parsed.windows.map(window => window.lengthMs)).toEqual([5 * HOUR, 7 * 24 * HOUR])
+  expect(parsed.windows.map(window => window.id)).toEqual(['five_hour', 'Weekly · Fable'])
+
+  const unavailable = fromAppUsage({
+    content: [{ type: 'text', text: '{"plan":{"status":"unavailable","note":"try again shortly"}}' }],
+  })
+  expect('error' in unavailable && unavailable.error).toBe('the app reports plan limits unavailable: try again shortly')
+  const garbage = fromAppUsage({ content: [{ type: 'text', text: 'nope' }] })
+  expect('error' in garbage).toBe(true)
+})
+
+test('a limit missing from the newest reading is kept from the last one', async () => {
+  const before = [fiveHour(22, 1), weekly('Weekly · Fable', 52, 30)]
+  const merged = mergeWindows(before, [weekly('Weekly · all models', 36, 30)], NOW)
+  expect(merged.map(window => window.id)).toEqual(['five_hour', 'Weekly · Fable', 'Weekly · all models'])
+  expect(merged[0]?.percentUsed).toBe(22)
+
+  // A kept limit whose reset has passed shows as empty, with no reset to count down to.
+  const afterReset = mergeWindows([fiveHour(60, -0.5)], [], NOW)
+  expect(afterReset[0]?.percentUsed).toBe(0)
+  expect(afterReset[0]?.resetsAt).toBeUndefined()
+
+  // A fresh reading of the same limit replaces the kept one.
+  const replaced = mergeWindows([fiveHour(60, 1)], [fiveHour(5, 4.9)], NOW)
+  expect(replaced).toHaveLength(1)
+  expect(replaced[0]?.percentUsed).toBe(5)
 })
 
 test('the bar marks headroom in blue and overage in amber', async () => {
@@ -278,5 +302,56 @@ test('a failed app usage call at start does not stop later refreshes from using 
 
   await clock.advance(60_000)
   expect((await band.find({ type: 'Text', text: /Fable/ }))?.text).toBe('Weekly · Fable')
+  await band.unmount()
+})
+
+test('a limit survives its reset and an unavailable app answer, which is reported', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  on('command.register', () => ({ value: { command: 'usage-pace' } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  let readings = 0
+  on('mcp.call', () => {
+    readings += 1
+    const plan =
+      readings === 1
+        ? {
+            status: 'ok',
+            plan: 'Max',
+            windows: [
+              { label: '5-hour limit', percentUsed: 21, resetsAt: new Date(NOW + 30_000).toISOString() },
+              { label: 'Weekly · all models', percentUsed: 4, resetsAt: new Date(NOW + 6 * 24 * HOUR).toISOString() },
+              { label: 'Weekly · Fable', percentUsed: 9, resetsAt: new Date(NOW + 6 * 24 * HOUR).toISOString() },
+            ],
+          }
+        : { status: 'unavailable', note: 'could not be read now' }
+    return { value: { isError: false, content: [{ type: 'text', text: JSON.stringify({ plan }) }] } }
+  })
+  on('session.usage', () => ({
+    value: {
+      startedAt: NOW,
+      context: { window: 1 },
+      rateLimits:
+        readings <= 1
+          ? [{ kind: 'five_hour', percentUsed: 21, resetsAt: new Date(NOW + 30_000).toISOString() }]
+          : [{ kind: 'seven_day', percentUsed: 4, resetsAt: new Date(NOW + 6 * 24 * HOUR).toISOString() }],
+    },
+  }))
+
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  const chip = await $.ui.mount({ ...CHIP, surface: 'desktop' })
+  await chip.press({ key: 'usage-pace-chip' })
+  await chip.unmount()
+
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect((await band.find({ type: 'Text', text: /5-hour/ }))?.text).toBe('5-hour limit')
+  expect((await band.find({ type: 'Text', text: /Fable/ }))?.text).toBe('Weekly · Fable')
+
+  // Two minutes on: the 5-hour window has reset, the engine no longer lists it, the app has no reading.
+  await clock.advance(120_000)
+  expect((await band.find({ type: 'Text', text: /5-hour/ }))?.text).toBe('5-hour limit')
+  expect((await band.find({ type: 'Text', text: /Fable/ }))?.text).toBe('Weekly · Fable')
+  expect((await band.find({ type: 'Text', text: /unavailable/ }))?.text).toBe(
+    'Per-model limits unavailable: the app reports plan limits unavailable: could not be read now',
+  )
   await band.unmount()
 })

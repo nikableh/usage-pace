@@ -112,40 +112,73 @@ export const fromRateLimits = (
 const lengthOfLabel = (label: string) =>
   /5.?hour/i.test(label) ? FIVE_HOURS : /week/i.test(label) ? SEVEN_DAYS : undefined
 
+// The same limit gets the same id from both sources, so their readings merge.
+const idOfLabel = (label: string) =>
+  /5.?hour/i.test(label) ? 'five_hour' : /week/i.test(label) && /all models/i.test(label) ? 'seven_day' : label
+
 type AppResult = {
   structuredContent?: unknown
   content?: readonly { type: string; text?: string }[]
 }
 
+export type AppUsage = { windows: PaceWindow[]; plan?: string } | { error: string }
+
 // The app's usage tool also names the per-model weekly limits, which the engine's list may lack.
-export const fromAppUsage = (result: AppResult): Omit<Snapshot, 'at'> | undefined => {
+export const fromAppUsage = (result: AppResult): AppUsage => {
   let body = result.structuredContent
   if (!body) {
     const text = result.content?.find(block => block.type === 'text')?.text
-    if (!text) return undefined
+    if (!text) return { error: 'the app answered with no text' }
     try {
       body = JSON.parse(text)
     } catch {
-      return undefined
+      return { error: 'the app answered with something other than JSON' }
     }
   }
 
-  const plan = (body as { plan?: { status?: string; plan?: string; windows?: unknown } }).plan
-  if (plan?.status !== 'ok' || !Array.isArray(plan.windows)) return undefined
+  const plan = (body as { plan?: { status?: string; plan?: string; windows?: unknown; note?: unknown } }).plan
+  if (!plan) return { error: 'the app answered without a plan section' }
+  if (plan.status !== 'ok') {
+    const note = typeof plan.note === 'string' && plan.note.trim() !== '' ? `: ${plan.note.trim()}` : ''
+    return { error: `the app reports plan limits ${plan.status ?? 'unknown'}${note}` }
+  }
+  if (!Array.isArray(plan.windows)) return { error: 'the app answered without a list of limits' }
 
   const windows: PaceWindow[] = []
   for (const row of plan.windows as { label?: unknown; percentUsed?: unknown; resetsAt?: unknown }[]) {
     if (typeof row.label !== 'string' || typeof row.percentUsed !== 'number') continue
     const lengthMs = lengthOfLabel(row.label)
     windows.push({
-      id: row.label,
+      id: idOfLabel(row.label),
       label: row.label,
       percentUsed: row.percentUsed,
       ...(typeof row.resetsAt === 'string' ? { resetsAt: row.resetsAt } : {}),
       ...(lengthMs ? { lengthMs } : {}),
     })
   }
-  return windows.length ? { windows, ...(plan.plan ? { plan: plan.plan } : {}) } : undefined
+  return { windows, ...(plan.plan ? { plan: plan.plan } : {}) }
+}
+
+// A limit the newest readings do not mention is kept from the last ones: the engine has no
+// reading for a window right after it resets, and the app's helper has moments with none at all.
+// A kept limit whose reset has passed shows as empty until a new reading comes.
+export const mergeWindows = (
+  previous: readonly PaceWindow[],
+  fresh: readonly PaceWindow[],
+  now: number,
+): PaceWindow[] => {
+  const byId = new Map<string, PaceWindow>()
+  for (const window of previous) {
+    const reset = window.resetsAt ? Date.parse(window.resetsAt) : Number.NaN
+    if (!Number.isNaN(reset) && reset <= now) {
+      const { resetsAt: _dropped, ...rest } = window
+      byId.set(window.id, { ...rest, percentUsed: 0 })
+    } else {
+      byId.set(window.id, window)
+    }
+  }
+  for (const window of fresh) byId.set(window.id, window)
+  return [...byId.values()]
 }
 
 const BLUE = '#2B7CDF'

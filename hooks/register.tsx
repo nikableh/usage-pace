@@ -1,9 +1,9 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import { barSvg, barWidth, formatDuration, formatReset, fromAppUsage, fromRateLimits, paceOf } from './pace'
-import type { Tone } from './pace'
-import type { Snapshot } from '../types'
+import { barSvg, barWidth, formatDuration, formatReset, fromAppUsage, fromRateLimits, mergeWindows, paceOf } from './pace'
+import type { AppUsage, Tone } from './pace'
+import type { PaceWindow, Snapshot } from '../types'
 
 const DEFAULT_LABEL = 'Pace'
 const REFRESH_MS = 60_000
@@ -25,36 +25,41 @@ const TONE_COLOR: Record<Exclude<Tone, 'muted'>, 'success' | 'warning' | 'error'
 let timer: Timer | undefined
 let startedAt = 0
 
-// The app's usage tool also names the per-model weekly limits. It is tried on every refresh
-// because at session start the app's servers may not be connected yet, and a session outside
-// the desktop app has no such server at all; either way the engine's own list is the fallback.
-const load = async ($: EngineInterface): Promise<Omit<Snapshot, 'at'>> => {
-  let appError: string
+// Both sources are read on every refresh and merged, the app's reading winning for a limit
+// both name: the app alone knows the per-model limits, but its helper is not connected for the
+// first seconds of a session and has moments with no reading, and a session outside the desktop
+// app has no such helper at all.
+const loadApp = async ($: EngineInterface): Promise<AppUsage> => {
   try {
     const result = await $.mcp.call('ccd_session_mgmt', 'get_usage')
-    if (!result.isError) {
-      const fromApp = fromAppUsage(result)
-      if (fromApp) return fromApp
-      appError = 'the app answered without plan limits'
-    } else {
-      appError = result.content.map(block => ('text' in block ? block.text : '')).join(' ').trim() || 'the app reported an error'
+    if (result.isError) {
+      const text = result.content.map(block => ('text' in block ? block.text : '')).join(' ').trim()
+      return { error: text || 'the app reported an error' }
     }
+    return fromAppUsage(result)
   } catch (error) {
-    appError = error instanceof Error ? error.message : String(error)
+    return { error: error instanceof Error ? error.message : String(error) }
   }
-  return { windows: fromRateLimits((await $.session.usage()).rateLimits), appError }
+}
+
+const loadEngine = async ($: EngineInterface): Promise<PaceWindow[]> => {
+  try {
+    return fromRateLimits((await $.session.usage()).rateLimits)
+  } catch {
+    return []
+  }
 }
 
 const refresh = async ($: EngineInterface) => {
-  try {
-    const next = await load($)
-    const at = await $.clock.now()
-    await update($, snapshot, last =>
-      next.windows.length === 0 && last.windows.length > 0 ? last : { ...next, at },
-    )
-  } catch {
-    // The last reading stays on screen and the footer says how old it is.
-  }
+  const [app, engine] = await Promise.all([loadApp($), loadEngine($)])
+  const now = await $.clock.now()
+  const fresh = 'error' in app ? engine : [...engine, ...app.windows]
+  await update($, snapshot, last => ({
+    windows: mergeWindows(last.windows, fresh, now),
+    ...('error' in app ? { appError: app.error } : {}),
+    ...(!('error' in app) && app.plan ? { plan: app.plan } : last.plan ? { plan: last.plan } : {}),
+    at: now,
+  }))
 }
 
 export const register: Register = (on, options) => {
