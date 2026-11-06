@@ -1,5 +1,12 @@
 {
   "name": "usage-pace",
-  "owner": { "name": "Nika Krasnova" },
-  "plugins": [{ "name": "usage-pace", "source": "./" }]
+  "description": "A usage pacing panel for Claude Code: are you burning your plan limits faster or slower than a steady pace?",
+  "owner": { "name": "Nika Krasnova", "url": "https://github.com/nikableh" },
+  "plugins": [
+    {
+      "name": "usage-pace",
+      "source": "./",
+      "description": "Shows whether plan usage is running ahead of or behind a steady burn until each limit resets"
+    }
+  ]
 }

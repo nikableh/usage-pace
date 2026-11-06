@@ -1,7 +1,12 @@
 {
   "name": "usage-pace",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Shows whether plan usage is running ahead of or behind a steady burn until each limit resets",
+  "author": { "name": "Nika Krasnova", "url": "https://github.com/nikableh" },
+  "homepage": "https://github.com/nikableh/usage-pace",
+  "repository": "https://github.com/nikableh/usage-pace",
+  "license": "MIT",
+  "keywords": ["usage", "rate-limit", "pace", "plan", "desktop"],
   "types": "./types/index.d.ts",
   "userConfig": {
     "label": {

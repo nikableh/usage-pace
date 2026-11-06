@@ -194,11 +194,11 @@ const hatchPattern = (id: string, color: string) =>
   `<pattern id="${id}" patternUnits="userSpaceOnUse" width="${HATCH_STEP}" height="${HATCH_STEP}" patternTransform="rotate(45)">` +
   `<line x1="0" y1="0" x2="0" y2="${HATCH_STEP}" stroke="${color}" stroke-width="2" stroke-opacity="0.75"/></pattern>`
 
-// The theme keys do not reach inside an SVG, so the tick picks its contrast from the color scheme.
-export const barWidth =(columns: number) => Math.max(120, columns * CELL_PX)
+export const barWidth = (columns: number) => Math.max(120, columns * CELL_PX)
 
+// The app's theme colors do not reach inside an SVG, so the tick picks its contrast from the color scheme.
 export const barSvg = (percentUsed: number, expected: number | undefined, width: number): string => {
-  const x =(percent: number) => (clamp(percent, 0, 100) / 100) * width
+  const x = (percent: number) => (clamp(percent, 0, 100) / 100) * width
   const used = x(percentUsed)
   const pace = expected === undefined ? undefined : x(expected)
 
