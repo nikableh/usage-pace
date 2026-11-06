@@ -44,19 +44,6 @@ If you want Claude Code itself to install the mod, paste this:
 
 > Install the Claude Code plugin `usage-pace` from the marketplace `nikableh/usage-pace` at the user scope, with `claude plugin install usage-pace --marketplace nikableh/usage-pace`, and accept the marketplace when asked.
 
-### From a clone, without installing
-
-```
-git clone https://github.com/nikableh/usage-pace.git
-claude --plugin-dir ./usage-pace
-```
-
-For sessions the desktop app starts, where no flag can be given, add the folder to `CLAUDE_CODE_PLUGIN_DIRS` in the `env` block of `~/.claude/settings.json`:
-
-```json
-{ "env": { "CLAUDE_CODE_PLUGIN_DIRS": "/absolute/path/to/usage-pace" } }
-```
-
 ## Requirements
 
 - Claude Code with hooks-module plugins (the "mods" API). The mod was built against Claude Code 2.1.309.
@@ -69,7 +56,7 @@ For sessions the desktop app starts, where no flag can be given, add the folder 
 | --- | --- | --- |
 | `label` | `Pace` | The fixed text of the footer chip. A picker over Pace, Usage, Plan usage and Limits in the config menu. |
 
-Options live in `~/.claude/settings.json` under `pluginConfigs["usage-pace"].options` (or `pluginConfigs["usage-pace@inline"]` for a `--plugin-dir` install).
+Options live in `~/.claude/settings.json` under `pluginConfigs["usage-pace"].options`.
 
 ## How it reads your usage
 
